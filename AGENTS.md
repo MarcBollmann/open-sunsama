@@ -72,6 +72,8 @@ opensunsama/
 | `/auth/*`               | Mixed | Login, register, profile         |
 | `/tasks/*`              | Yes   | Task CRUD + reorder              |
 | `/tasks/:id/subtasks/*` | Yes   | Subtask CRUD                     |
+| `/projects/*`           | Yes   | Project CRUD + reorder (`tasks:read` / `tasks:write`) |
+| `/task-series/*`        | Yes   | Recurring tasks (routines)       |
 | `/time-blocks/*`        | Yes   | Time block CRUD + cascade resize |
 | `/calendar-events`      | Yes   | Synced events (`date` or `from`/`to`; `calendar:read`) |
 | `/work-sessions`        | Yes   | Timer runs (`date` or `from`/`to`; `tasks:read`) |
@@ -116,6 +118,7 @@ opensunsama/
 | -------------------------- | ------------------------------------------------------- |
 | `users`                    | Accounts with preferences (JSONB)                       |
 | `tasks`                    | Title, notes, scheduledDate, priority (P0-P3), position |
+| `projects`                 | Name, color, position, archivedAt; `tasks.project_id` and `task_series.project_id` point here (SET NULL) |
 | `subtasks`                 | Checklist items per task                                |
 | `time_blocks`              | Scheduled blocks linked to tasks                        |
 | `api_keys`                 | Hashed keys with scopes                                 |
@@ -144,6 +147,7 @@ E2E test of the OAuth flow against a local API: `MCP_E2E_API_URL=http://localhos
 | Tasks       | `list_tasks`, `get_task`, `create_task`, `update_task`, `complete_task`, `uncomplete_task`, `delete_task`, `schedule_task`, `reorder_tasks`            |
 | Time Blocks | `list_time_blocks`, `get_time_block`, `create_time_block`, `update_time_block`, `delete_time_block`, `link_task_to_time_block`, `get_schedule_for_day` |
 | Calendar    | `list_calendar_events` (read-only events synced from Google/Outlook/iCloud; also shown in `get_schedule_for_day`)                                   |
+| Projects    | `list_projects`, `create_project`, `update_project`, `delete_project` (`list_tasks`, `create_task`, `update_task` take `projectId`)                    |
 | Subtasks    | `list_subtasks`, `create_subtask`, `toggle_subtask`, `update_subtask`, `delete_subtask`                                                                |
 | User        | `get_user_profile`, `update_user_profile`                                                                                                              |
 
