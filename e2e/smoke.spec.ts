@@ -946,3 +946,82 @@ test("a routine files its tasks under its project and moves them when it changes
     api("POST", "/tasks", { title: "x", projectId: foreign.id }, session.token)
   ).rejects.toThrow(/400/);
 });
+
+test("projects label tasks, filter the board and default new tasks", async ({ page }) => {
+  const session = await register();
+  const work = await api<{ id: string }>("POST", "/projects", { name: "Work", color: "#3B82F6" }, session.token);
+  const house = await api<{ id: string }>("POST", "/projects", { name: "House" }, session.token);
+  const stamp = Date.now();
+  const workTask = `Send the offer ${stamp}`;
+  const houseTask = `Order tiles ${stamp}`;
+  const looseTask = `Loose end ${stamp}`;
+  const houseBacklog = `Plan the bathroom ${stamp}`;
+  await api("POST", "/tasks", { title: workTask, scheduledDate: today, projectId: work.id }, session.token);
+  await api("POST", "/tasks", { title: houseTask, scheduledDate: today, projectId: house.id }, session.token);
+  await api("POST", "/tasks", { title: looseTask, scheduledDate: today }, session.token);
+  await api("POST", "/tasks", { title: houseBacklog, projectId: house.id }, session.token);
+  await signInWithToken(page, session);
+  await page.goto("/app");
+
+  // Cards carry their project.
+  const card = (title: string) => todayColumn(page).locator("[data-task-id]").filter({ hasText: title });
+  await expect(card(workTask).getByRole("button", { name: "Project: Work" })).toBeVisible();
+  await expect(card(looseTask).getByRole("button", { name: /^Project:/ })).toHaveCount(0);
+
+  // Filtering to a project hides everything else on the board.
+  const pickFilter = async (name: string) => {
+    await page.getByRole("button", { name: /^Project filter:/ }).first().click();
+    await page.getByRole("listbox", { name: "Project" }).getByRole("option", { name }).click();
+    // The menu fades out; wait so the next menu is the only one on the page.
+    await expect(page.getByRole("listbox", { name: "Project" })).toHaveCount(0);
+  };
+  await pickFilter("House");
+  await expect(card(houseTask)).toBeVisible();
+  await expect(card(workTask)).toHaveCount(0);
+  await expect(card(looseTask)).toHaveCount(0);
+
+  // A task added now lands in the filtered project.
+  const added = `Call the plumber ${stamp}`;
+  await todayColumn(page).getByRole("button", { name: "Add task" }).click();
+  const composer = page.getByRole("dialog", { name: "Add task" });
+  await expect(composer.getByRole("button", { name: "Project: House" })).toBeVisible();
+  await composer.getByRole("textbox", { name: "Task title" }).fill(added);
+  const created = page.waitForResponse((r) => r.request().method() === "POST" && /\/tasks$/.test(r.url()));
+  await page.keyboard.press("Enter");
+  expect((await created).ok()).toBe(true);
+  const houseTasks = await api<Array<{ title: string }>>(
+    "GET",
+    `/tasks?projectId=${house.id}&completed=false`,
+    undefined,
+    session.token
+  );
+  expect(houseTasks.map((t) => t.title).sort()).toEqual([added, houseBacklog, houseTask].sort());
+
+  // "No project" shows only the task without one, and the choice survives a reload.
+  await pickFilter("No project");
+  await expect(card(looseTask)).toBeVisible();
+  await expect(card(houseTask)).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Project filter: No project" }).first()).toBeVisible();
+  await expect(card(looseTask)).toBeVisible();
+  await expect(card(workTask)).toHaveCount(0);
+
+  // Moving a task from its card changes its project in the database.
+  await pickFilter("All projects");
+  await card(workTask).getByRole("button", { name: "Project: Work" }).click();
+  const moved = page.waitForResponse((r) => r.request().method() === "PATCH" && /\/tasks\//.test(r.url()));
+  await page.getByRole("listbox", { name: "Project" }).getByRole("option", { name: "House" }).click();
+  expect((await moved).ok()).toBe(true);
+  await expect(card(workTask).getByRole("button", { name: "Project: House" })).toBeVisible();
+
+  // Deleting a project keeps its tasks, without a project.
+  await api("DELETE", `/projects/${house.id}`, undefined, session.token);
+  const afterDelete = await api<Array<{ title: string; projectId: string | null }>>(
+    "GET",
+    `/tasks?from=${today}&to=${today}`,
+    undefined,
+    session.token
+  );
+  expect(afterDelete.find((t) => t.title === houseTask)?.projectId).toBeNull();
+  expect(afterDelete).toHaveLength(4);
+});
